@@ -34,7 +34,7 @@ To download a model from HuggingFace, use the script: [`scripts/download_hf_mode
 
 ## Launching Inference with StarX Attention
 
-This repository contains code for launching inference with Star Attention on two benchmarks: RULER and BABILong. The instructions to run each of those benchmarks are shared in the following subsections.
+This repository contains code for launching inference with Star Attention on the benchmark RULER . The instructions to run benchmark are shared in the following subsections.
 
 ### RULER
 To run inference on RULER, use the script: [`run_ruler.py`](run_ruler.py).
