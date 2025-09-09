@@ -32,7 +32,7 @@ To download a model from HuggingFace, use the script: [`scripts/download_hf_mode
 
 *NOTE: For certain models, you might need to input the huggingface hub token from your account settings via the `--token` flag.*
 
-## Launching Inference with Star Attention
+## Launching Inference with StarX Attention
 
 This repository contains code for launching inference with Star Attention on two benchmarks: RULER and BABILong. The instructions to run each of those benchmarks are shared in the following subsections.
 
