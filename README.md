@@ -75,4 +75,4 @@ If you have a multi-node setup (such as a slurm cluster), then you can add the `
 ## References
 
 - Llama Implementation: [huggingface/transformers](https://github.com/huggingface/transformers)
-- Star Attention Implementation: [zhuzilin/ring-flash-attention](https://github.com/NVIDIA/Star-Attention/tree/main)
+- Star Attention Implementation: [NVIDIA/star-attention](https://github.com/NVIDIA/Star-Attention/tree/main)
