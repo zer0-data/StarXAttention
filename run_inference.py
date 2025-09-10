@@ -25,7 +25,7 @@ def init_distributed():
         dist.init_process_group('nccl')
         rank = dist.get_rank()
         world_size = dist.get_world_size()
-        print(f'[run_star_attn_inference.init_distributed] Rank: {rank}, World size: {world_size}')
+        print(f'[run_inference.init_distributed] Rank: {rank}, World size: {world_size}')
     else:
         rank = 0
         world_size = 1
@@ -173,7 +173,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', required=True, help='path to the model checkpoint')
     parser.add_argument('--attn_type', required=True, help='type of attention')
-    parser.add_argument('--block_size', type=int, default=-1, help='block size for star attention')
+    parser.add_argument('--block_size', type=int, default=-1, help='block size for starx attention')
     parser.add_argument('--anchor_block_size', type=int, default=-1, help='anchor block size for starx attention')
     parser.add_argument('--tokens_to_generate', type=int, required=True, help='number of tokens to generate')
     parser.add_argument('--stop_words', default='', help='comma separated stop words for generation')
