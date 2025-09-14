@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import os
 import yaml
@@ -39,7 +54,7 @@ def define_cmd_arguments():
     )
 
     # Attention Configuration
-    parser.add_argument('-a', '--attn_type', default='starx', help='attention type')
+    parser.add_argument('-a', '--attn_type', default='star', help='attention type')
     parser.add_argument('-bs', '--block_size', type=int, default=-1, help='context block size')
     parser.add_argument('-as', '--anchor_block_size', type=int, default=-1, help='anchor block size')
 
@@ -100,7 +115,7 @@ def main(
     num_nodes: int = 1,
     pregen_data_dir: Optional[str] = None,
 ):
-    if 'starx' in attn_type:
+    if 'star' in attn_type:
         assert (
             block_size >= anchor_block_size
         ), f'block_size ({block_size}) must be greater than anchor_block_size ({anchor_block_size})'
@@ -116,7 +131,7 @@ def main(
 
     # Schedule jobs for each sequence length
     for seq_length in seq_lengths:
-        if 'starx' in attn_type and block_size + anchor_block_size > seq_length:
+        if 'star' in attn_type and block_size + anchor_block_size > seq_length:
             print(
                 f'block_size + anchor_block_size ({block_size + anchor_block_size}) '
                 f'must be less than or equal to seq_length ({seq_length}). '
@@ -163,7 +178,7 @@ def main(
 
             # Run response generation
             task_gen_cmd = (
-                f'{inference_executor} run_inference.py '
+                f'{inference_executor} run_star_attn_inference.py '
                 f'--model_path {model_path} '
                 f'--attn_type {attn_type} '
                 f'--block_size {block_size} '
@@ -186,11 +201,11 @@ if __name__ == '__main__':
     # Parse command line arguments
     args = define_cmd_arguments()
 
-    # Validate starx attention parameters
-    if 'starx' in args.attn_type:
+    # Validate star attention parameters
+    if 'star' in args.attn_type:
         assert args.block_size > 0, 'block_size must be greater than 0'
 
-    # Validate starx attention parameters
+    # Validate star and ring attention parameters
     if args.attn_type != 'dense':
         assert args.nproc_per_node is not None and args.nproc_per_node > 0, 'nproc_per_node must be greater than 0'
         assert args.num_nodes > 0, 'num_nodes must be greater than 0'
@@ -201,7 +216,7 @@ if __name__ == '__main__':
 
     # Setup the model name and output directory
     model_name_suffix = ''
-    if 'starx' in args.attn_type:
+    if 'star' in args.attn_type:
         anchor_block_size = args.anchor_block_size if args.anchor_block_size > 0 else args.block_size
         anchor_block_size_repr = (
             f'{anchor_block_size}' if anchor_block_size < 1024 else f'{anchor_block_size // 1024}k'
