@@ -13,5 +13,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .star_flash_attn import star_flash_attn_func
-from .star_flash_attn_varlen import star_flash_attn_varlen_func
+from .modeling_llama import LlamaForCausalLM
