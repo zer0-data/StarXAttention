@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 from typing import Dict, List, Optional, Tuple
 
@@ -15,7 +30,7 @@ class DistributedInferenceBaseModel:
         block_size: int = -1,
         anchor_block_size: int = -1,
     ):
-        from star_xattention import LlamaForCausalLM
+        from star_attention import LlamaForCausalLM
 
         self._init_distributed()
 
@@ -101,7 +116,7 @@ class DistributedInferenceBaseModel:
         raise NotImplementedError
 
     def _generate_output(self, input_ids, position_ids, past_key_values):
-        """Phase 2 of StarX Attention: Process input tokens followed by autoregressive token generation.
+        """Phase 2 of Star Attention: Process input tokens followed by autoregressive token generation.
 
         Args:
             input_ids: input token ids
@@ -156,8 +171,8 @@ class DistributedInferenceBaseModel:
         raise NotImplementedError
 
 
-class StarXAttentionModel(DistributedInferenceBaseModel):
-    """StarX Attention - Phase 1 and Phase 2"""
+class StarAttentionModel(DistributedInferenceBaseModel):
+    """Star Attention - Phase 1 and Phase 2"""
 
     def _tokenize_and_partition_context(self, ctx):
         # Tokenize the context
@@ -185,6 +200,13 @@ class StarXAttentionModel(DistributedInferenceBaseModel):
             self.anchor_block_size = ctx_ids_blocks[0][0].shape[-1]
 
         kv_rank = []
+        # Clear any previous summaries on rank 0 before recomputing
+        if self.rank == 0:
+            try:
+                from star_attention.anchor_registry import clear_anchor_summaries
+                clear_anchor_summaries()
+            except Exception:
+                pass
         for idx in range(len(ctx_ids_blocks[self.rank])):
             # Select the current block
             ctx_block = ctx_ids_blocks[self.rank][idx]
@@ -211,6 +233,17 @@ class StarXAttentionModel(DistributedInferenceBaseModel):
                 kv_block = [
                     [x[0][:, :, self.anchor_block_size :], x[1][:, :, self.anchor_block_size :]] for x in kv_block
                 ]
+            else:
+                # On rank 0, compute and store per-layer anchor summaries (mean over anchor positions)
+                try:
+                    from star_attention.anchor_registry import set_anchor_summary
+                    # kv_block is a list per layer: [K, V], shapes: (B, Hk, T, Dh)
+                    for layer_idx, (k_layer, _) in enumerate(kv_block):
+                        anchor_k = k_layer[:, :, : self.anchor_block_size, :]  # (B, Hk, A, Dh)
+                        anchor_summary = anchor_k.mean(dim=2, keepdim=True)    # (B, Hk, 1, Dh)
+                        set_anchor_summary(layer_idx, anchor_summary)
+                except Exception:
+                    pass
 
             kv_rank = (
                 kv_block
@@ -249,6 +282,75 @@ class StarXAttentionModel(DistributedInferenceBaseModel):
         # Get the generated text
         generated_text = self._get_output_text(output)
         return {'text': [generated_text]}
+
+
+class RingAttentionModel(DistributedInferenceBaseModel):
+    """Ring Attention augmented with Phase 2 of Star Attention for Fast Token Generation"""
+
+    def __init__(self, path, max_new_tokens, stop_words=None):
+        super().__init__(path, max_new_tokens, stop_words=stop_words)
+
+    def _tokenize_and_partition_context(self, ctx):
+        # Tokenize the context
+        ctx_ids = self._tokenize(ctx)
+        ctx_len = ctx_ids.shape[-1]
+
+        # Pad the context to be a multiple of world_size
+        if ctx_ids.shape[-1] % self.world_size != 0:
+            padding = self.world_size - (ctx_ids.shape[-1] % self.world_size)
+            ctx_ids = torch.cat((ctx_ids, torch.zeros_like(ctx_ids)[:, :padding]), dim=-1)
+
+        # Split the context into blocks
+        self.block_size = ctx_ids.shape[-1] // self.world_size
+
+        position_ids = torch.arange(0, ctx_ids.shape[-1]).unsqueeze(0).to(self.model.device)
+
+        return ctx_ids, position_ids, ctx_len
+
+    def _process_blockwise_context(self, ctx_ids_blocks, position_ids_blocks):
+        assert len(ctx_ids_blocks[self.rank]) == 1, 'Ring Attention expects only one block per rank'
+
+        ctx_block = ctx_ids_blocks[self.rank][0]
+        position_block = position_ids_blocks[self.rank][0]
+        with torch.no_grad():
+            kv_rank = self.model(
+                ctx_block,
+                position_ids=position_block,
+                use_cache=True,
+                num_ring_steps=-1,  # enable ring attention
+                enable_star_attn=False,
+            ).past_key_values  # type: ignore
+
+        return kv_rank
+
+    def __call__(self, prompt_context: str, prompt_query: str) -> Dict[str, List[str]]:
+        # Prepare the context
+        ctx_ids, position_ids, ctx_len = self._tokenize_and_partition_context(prompt_context)
+
+        # Divide the context blocks among the ranks
+        ctx_ids_blocks = torch.tensor_split(torch.stack(ctx_ids.split(self.block_size, dim=-1)), self.world_size)
+        position_ids_blocks = torch.tensor_split(
+            torch.stack(position_ids.split(self.block_size, dim=-1)), self.world_size
+        )
+
+        # Generate the KV cache for the local context
+        kv_rank = self._process_blockwise_context(ctx_ids_blocks, position_ids_blocks)
+        if self.rank == self.world_size - 1:  # discard padding from the last rank
+            padding = ctx_ids.shape[-1] - ctx_len
+            if padding > 0:
+                kv_rank = [
+                    [kv_rank[i][0][:, :, :-padding], kv_rank[i][1][:, :, :-padding]] for i in range(len(kv_rank))
+                ]
+
+        # Phase 2 from Star Attention: Global attention with online softmax
+        qry_ids = self._tokenize(prompt_query)
+        qry_position_ids = torch.arange(ctx_len, ctx_len + qry_ids.shape[-1]).unsqueeze(0).to(self.model.device)
+        output = self._generate_output(qry_ids, qry_position_ids, kv_rank)
+
+        # Get the generated text
+        generated_text = self._get_output_text(output)
+        return {'text': [generated_text]}
+
 
 class DenseAttentionModel:
 
