@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import json
 import os
@@ -25,7 +40,7 @@ def init_distributed():
         dist.init_process_group('nccl')
         rank = dist.get_rank()
         world_size = dist.get_world_size()
-        print(f'[run_inference.init_distributed] Rank: {rank}, World size: {world_size}')
+        print(f'[run_star_attn_inference.init_distributed] Rank: {rank}, World size: {world_size}')
     else:
         rank = 0
         world_size = 1
@@ -62,11 +77,21 @@ def load_model(
             max_new_tokens=tokens_to_generate,
             stop_words=stop_words,
         )
-    elif attn_type == 'starx':
-        from model import StarXAttentionModel
 
-        assert block_size > 0, 'block_size must be provided for starx attention'
-        model = StarXAttentionModel(
+    elif attn_type == 'ring':
+        from model import RingAttentionModel
+
+        model = RingAttentionModel(
+            path=model_path,
+            max_new_tokens=tokens_to_generate,
+            stop_words=stop_words,
+        )
+
+    elif attn_type == 'star':
+        from model import StarAttentionModel
+
+        assert block_size > 0, 'block_size must be provided for star attention'
+        model = StarAttentionModel(
             path=model_path,
             block_size=block_size,
             max_new_tokens=tokens_to_generate,
@@ -92,17 +117,17 @@ def main(
     anchor_block_size: int = -1,
     use_cache: bool = False,
 ):
-    """Run inference using StarX-Attention.
+    """Run inference using Star-Attention.
 
     Args:
         model_path: path to the model checkpoint
-        attn_type: type of attention. One of ['dense', 'starx', 'starxkv']
+        attn_type: type of attention. One of ['dense', 'star', 'starkv']
         tokens_to_generate: number of tokens to generate during generation
         input_file: path to the input jsonl file
         output_file: path to the output jsonl file where the generated predictions will be saved
         stop_words: list of stop words for generation. Default: None
-        block_size: block size for starx attention. Default: -1 (should be provided for starx attention)
-        anchor_block_size: anchor block size for starx attention. Default: -1 (should be provided for star attention)
+        block_size: block size for star attention. Default: -1 (should be provided for star attention)
+        anchor_block_size: anchor block size for star attention. Default: -1 (should be provided for star attention)
         use_cache: resume from last generation if the output file already exists. Default: False
     """
     rank, _ = init_distributed()
@@ -173,8 +198,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', required=True, help='path to the model checkpoint')
     parser.add_argument('--attn_type', required=True, help='type of attention')
-    parser.add_argument('--block_size', type=int, default=-1, help='block size for starx attention')
-    parser.add_argument('--anchor_block_size', type=int, default=-1, help='anchor block size for starx attention')
+    parser.add_argument('--block_size', type=int, default=-1, help='block size for star attention')
+    parser.add_argument('--anchor_block_size', type=int, default=-1, help='anchor block size for star attention')
     parser.add_argument('--tokens_to_generate', type=int, required=True, help='number of tokens to generate')
     parser.add_argument('--stop_words', default='', help='comma separated stop words for generation')
     parser.add_argument('--input_path', required=True, help='path to the input jsonl file')
