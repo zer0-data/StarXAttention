@@ -1,5 +1,7 @@
 # StarXAttention
 
+The following is a modified implementation of Star Attention which utilises anti-diagonal scoring as proposed in XAttention for blockwise weighting.
+
 ## Setup Instructions
 
 ### Dependencies
